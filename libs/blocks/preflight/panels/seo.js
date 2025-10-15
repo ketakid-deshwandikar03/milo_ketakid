@@ -203,6 +203,36 @@ async function handleAsoSignIn() {
   }, ASO_TIMEOUT_MS);
 }
 
+function exportToCSV(badLinks) {
+  const headers = [
+    'Source URL', 'Locale', 'Broken Links', 'Tag Type', 'Position', 
+    'Link Text / Img Alt', 'Visibility', 'Response Code', 
+    'Redirected URL', 'Redirected URL Status'
+  ];
+  
+  const csvContent = [
+    headers.join(','),
+    ...badLinks.map(link => [
+      `"${link.sourceUrl}"`,
+      link.locale,
+      `"${link.brokenLink}"`,
+      link.tagType,
+      link.position,
+      `"${(link.linkText || link.imgAlt).replace(/"/g, '""')}"`,
+      link.visibility,
+      link.responseCode,
+      `"${link.redirectedUrl}"`,
+      link.redirectedStatus
+    ].join(','))
+  ].join('\n');
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `broken-links-${new Date().toISOString().split('T')[0]}.csv`;
+  link.click();
+}
+
 export default function SEO() {
   useEffect(() => {
     getResults();
@@ -264,20 +294,45 @@ export default function SEO() {
     <div class='problem-links'>
     ${linksResult.value.details.badLinks.length > 0 && html`
       <p class="note">Close preflight to see problem links highlighted on page.</p>
-      <table>
-        <tr>
-          <th></th>
-          <th>Problematic URLs</th>
-          <th>Located in</th>
-          <th>Status</th>
-        </tr>
-        ${linksResult.value.details.badLinks.map((link, idx) => html`
-          <tr>
-            <td>${idx + 1}.</td>
-            <td><a href='${link?.liveHref}' target='_blank'>${link?.liveHref}</a></td>
-            <td><span>${link?.parent}</span></td>
-            <td><span>${link?.status}</span></td>
-          </tr>`)}
-      </table>`}
+      <div class="table-wrapper" style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
+        <table class="enhanced-links-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Source URL</th>
+              <th>Locale</th>
+              <th>Broken Links</th>
+              <th>Tag Type</th>
+              <th>Position</th>
+              <th>Link Text / Img Alt</th>
+              <th>Visibility</th>
+              <th>Response Code</th>
+              <th>Redirected URL</th>
+              <th>Redirected Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linksResult.value.details.badLinks.map((link, idx) => html`
+              <tr>
+                <td>${idx + 1}</td>
+                <td><a href='${link.sourceUrl}' target='_blank' class='truncate' title='${link.sourceUrl}'>${link.sourceUrl}</a></td>
+                <td>${link.locale}</td>
+                <td><a href='${link.brokenLink}' target='_blank' class='truncate' title='${link.brokenLink}'>${link.brokenLink}</a></td>
+                <td>${link.tagType}</td>
+                <td>${link.position}</td>
+                <td class='truncate' title='${link.linkText || link.imgAlt}'>${link.linkText || link.imgAlt}</td>
+                <td>${link.visibility}</td>
+                <td class='status-${link.responseCode >= 400 ? 'error' : 'warning'}'>${link.responseCode}</td>
+                <td>${link.redirectedUrl ? html`<a href='${link.redirectedUrl}' target='_blank' class='truncate' title='${link.redirectedUrl}'>${link.redirectedUrl}</a>` : 'NA'}</td>
+                <td>${link.redirectedStatus}</td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      </div>
+      <button class="preflight-action export-btn" onclick=${() => exportToCSV(linksResult.value.details.badLinks)}>
+        Export to CSV
+      </button>
+    `}
     </div>`;
 }

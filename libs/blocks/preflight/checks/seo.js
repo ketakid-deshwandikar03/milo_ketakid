@@ -29,6 +29,31 @@ function waitForFooter() {
   });
 }
 
+// Helper function to extract locale from URL
+function getLocale(url) {
+  const pathname = url.pathname;
+  const match = pathname.match(/^\/([a-z]{2}_[a-z]{2})\//);
+  return match ? match[1] : 'en_us'; // default to en_us
+}
+
+// Helper function to determine element visibility
+function isElementVisible(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  return style.display !== 'none' 
+    && style.visibility !== 'hidden' 
+    && style.opacity !== '0'
+    && el.offsetWidth > 0 
+    && el.offsetHeight > 0;
+}
+
+// Helper function to determine position
+function getPosition(link) {
+  if (link.closest('header') || link.closest('nav')) return 'NAV';
+  if (link.closest('footer')) return 'FOOTER';
+  return 'CONTENT';
+}
+
 export function checkH1s(area) {
   const h1s = area.querySelectorAll('h1');
   let status;
@@ -224,6 +249,9 @@ async function getSpidyResults(url, opts) {
       const status = result.status === 'ECONNREFUSED' ? 503 : result.status;
       if (status >= 399) {
         result.status = status;
+        // Capture redirect information if available
+        result.redirectedUrl = result.redirectUrl || result.finalUrl || result.redirectedUrl || '';
+        result.redirectedStatus = result.redirectStatus || result.finalStatus || result.redirectedStatus || 'NA';
         acc.push(result);
       }
       return acc;
@@ -237,11 +265,23 @@ async function getSpidyResults(url, opts) {
 function compareResults(result, link) {
   const match = link.liveHref === result.url;
   if (!match) return false;
+  
+  // Capture parent location
   if (link.closest('header')) link.parent = 'gnav';
   if (link.closest('main')) link.parent = 'main';
   if (link.closest('footer')) link.parent = 'footer';
-  link.classList.add('problem-link');
+  
+  // Capture detailed information
+  link.position = getPosition(link);
+  link.tagType = link.tagName || 'Anchor';
+  link.linkText = link.textContent?.trim() || link.getAttribute('aria-label') || '';
+  link.imgAlt = link.querySelector('img')?.alt || '';
+  link.visibility = isElementVisible(link);
   link.status = result.status;
+  link.redirectedUrl = result.redirectedUrl || '';
+  link.redirectedStatus = result.redirectedStatus || 'NA';
+  
+  link.classList.add('problem-link');
   link.dataset.status = link.status;
   return true;
 }
@@ -326,8 +366,30 @@ export async function checkLinks({ area, urlHash, envName }) {
     badResults.push(...spidyResults);
   }
 
-  const badLinks = badResults.map((result) => links.find((link) => compareResults(result, link)))
-    .filter(Boolean);
+  const badLinks = badResults.map((result) => {
+    const link = links.find((l) => compareResults(result, l));
+    if (!link) return null;
+    
+    // Return enhanced metadata for each broken link
+    return {
+      sourceUrl: window.location.href,
+      locale: getLocale(new URL(window.location.href)),
+      brokenLink: link.liveHref,
+      tagType: link.tagType || 'Anchor',
+      position: link.position || 'CONTENT',
+      linkText: link.linkText || '',
+      imgAlt: link.imgAlt || '',
+      visibility: link.visibility ? 'TRUE' : 'FALSE',
+      responseCode: link.status,
+      redirectedUrl: link.redirectedUrl || '',
+      redirectedStatus: link.redirectedStatus || 'NA',
+      // Keep legacy properties for backward compatibility
+      liveHref: link.liveHref,
+      parent: link.parent,
+      status: link.status,
+      element: link, // Keep reference for highlighting
+    };
+  }).filter(Boolean);
 
   const count = badLinks.length;
   const linkText = count > 1 || count === 0 ? 'links' : 'link';

@@ -19,6 +19,7 @@ import {
   checkBody,
   checkLorem,
   validLinkFilter,
+  checkLinks,
 } from './seo.js';
 
 // eslint-disable-next-line import/prefer-default-export
@@ -69,6 +70,7 @@ window.preflightExecutors = {
     checkBody,
     checkLorem,
     validLinkFilter,
+    checkLinks,
   },
 };
 

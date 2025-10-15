@@ -494,6 +494,75 @@ span.preflight-time {
   background-color: rgb(0 0 0 / 20%);
 }
 
+/* Enhanced links table styles */
+.enhanced-links-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 16px;
+  background-color: rgb(0 0 0 / 8%);
+  border-radius: 6px;
+}
+
+.enhanced-links-table th,
+.enhanced-links-table td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.enhanced-links-table th {
+  background-color: rgb(0 0 0 / 20%);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  text-transform: uppercase;
+}
+
+.enhanced-links-table .truncate {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.enhanced-links-table .status-error {
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
+.enhanced-links-table .status-warning {
+  color: #ffa500;
+  font-weight: 600;
+}
+
+.enhanced-links-table tbody tr:hover {
+  background-color: rgb(0 0 0 / 30%);
+}
+
+.enhanced-links-table a {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.enhanced-links-table a:hover {
+  color: #1e90ff;
+}
+
+.table-wrapper {
+  max-height: 500px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border-radius: 6px;
+}
+
+.export-btn {
+  margin-top: 16px;
+}
+
 .problem-link {
   border: 3px solid #000!important;
   color: #fff!important;
