@@ -1,4 +1,4 @@
-import { runGeneralChecks } from '../panels/general.js';
+import { runGeneralChecks, getBrokenLinksDetails } from '../panels/general.js'; 
 import { checkImageDimensions } from './assets.js';
 import { checkAlt } from '../accessibility/audit-image-alt-text.js';
 import {
@@ -45,7 +45,7 @@ export async function openAllModals(area = document) {
 }
 
 window.preflightExecutors = {
-  general: { runGeneralChecks },
+  general: { runGeneralChecks, getBrokenLinksDetails },
   assets: {
     openAllModals,
     checkImageDimensions,

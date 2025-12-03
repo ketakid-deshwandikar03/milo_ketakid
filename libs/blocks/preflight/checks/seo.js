@@ -233,7 +233,19 @@ async function getSpidyResults(url, opts) {
     return [];
   }
 }
-
+// Helper function to check if element is visible
+function isElementVisible(element) {
+  const style = window.getComputedStyle(element);
+  return style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && style.opacity !== '0'
+    && element.offsetParent !== null;
+}
+// Helper function to extract locale from path
+function extractLocale(pathname) {
+  const localeMatch = pathname.match(/^\/([a-z]{2}_[a-z]{2})\//i);
+  return localeMatch ? localeMatch[1] : 'en_us';
+}
 function compareResults(result, link) {
   const match = link.liveHref === result.url;
   if (!match) return false;
@@ -243,6 +255,14 @@ function compareResults(result, link) {
   link.classList.add('problem-link');
   link.status = result.status;
   link.dataset.status = link.status;
+  // Add additional metadata for detailed reporting
+  link.tagType = link.tagName.toLowerCase();
+  link.linkText = link.textContent?.trim() || link.getAttribute('alt') || link.getAttribute('aria-label') || '';
+  link.visibility = isElementVisible(link);
+  link.sourceUrl = window.location.href;
+  link.locale = extractLocale(window.location.pathname);
+  link.redirectedUrl = result.redirectedUrl || '';
+  link.redirectedStatus = result.redirectedStatus || 'NA';  
   return true;
 }
 

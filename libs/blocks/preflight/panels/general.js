@@ -2,7 +2,7 @@ import { html, signal, useEffect } from '../../../deps/htm-preact.js';
 import { STATUS, STRUCTURE_TITLES } from '../checks/constants.js';
 import { runChecks as runStructureChecks } from '../checks/structure.js';
 import userCanPublishPage from '../../../tools/utils/publish.js';
-
+import { getPreflightResults } from '../checks/preflightApi.js';
 const DEF_NOT_FOUND = 'Not found';
 const DEF_NEVER = 'Never';
 const NOT_FOUND = {
@@ -21,6 +21,48 @@ const regionSelectorResult = signal({ icon: 'purple', title: STRUCTURE_TITLES.re
 const georoutingResult = signal({ icon: 'purple', title: STRUCTURE_TITLES.georouting, description: 'Checking...' });
 const breadcrumbsResult = signal({ icon: 'purple', title: STRUCTURE_TITLES.breadcrumbs, description: 'Checking...' });
 
+function extractLocaleFromUrl(url) {
+  const pathname = new URL(url).pathname;
+  const localeMatch = pathname.match(/^\/([a-z]{2}_[a-z]{2})\//i);
+  return localeMatch ? localeMatch[1] : 'en_us';
+}
+// Export function for broken links with all details (for contentInsights.js)
+export async function getBrokenLinksDetails() {
+  try {
+    const results = (await getPreflightResults(window.location.href, document)).runChecks.seo || [];
+    for (const resultOrPromise of results) {
+      const result = await Promise.resolve(resultOrPromise);
+      if (result.id === 'links') {
+        if (result.details && result.details.badLinks) {
+          // Return formatted data as object with all columns
+          const items = result.details.badLinks.map(link => ({
+            sourceUrl: link.sourceUrl || window.location.href,
+            locale: link.locale || extractLocaleFromUrl(window.location.href),
+            brokenLinks: link.liveHref || link.href,
+            tagType: link.tagType || link.tagName?.toLowerCase() || 'anchor',
+            position: (link.parent || 'main').toUpperCase(),
+            linkText: link.linkText || link.textContent?.trim() || link.alt || '',
+            visibility: link.visibility !== undefined ? link.visibility : true,
+            responseCode: link.status || 'Unknown',
+            redirectedUrl: link.redirectedUrl || '',
+            redirectedStatus: link.redirectedStatus || 'NA',
+          }));
+          return {
+            items,
+            nav: { items: [], closed: true },
+            page: { items: [] },
+            pdfs: { items: [] },
+          };
+        }
+        return { items: [], nav: { items: [], closed: true }, page: { items: [] }, pdfs: { items: [] } }; // No broken links
+      }
+    }
+    return { items: [], nav: { items: [], closed: true }, page: { items: [] }, pdfs: { items: [] } }; // Links check not found
+  } catch (error) {
+    console.error('Error getting broken links details:', error);
+    return { items: [], nav: { items: [], closed: true }, page: { items: [] }, pdfs: { items: [] } };
+  }
+}
 async function getStructureResults() {
   const signals = [
     navResult,
