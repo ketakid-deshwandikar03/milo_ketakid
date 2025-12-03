@@ -2,7 +2,10 @@ import { html, signal, useEffect } from '../../../deps/htm-preact.js';
 import { STATUS, STRUCTURE_TITLES } from '../checks/constants.js';
 import { runChecks as runStructureChecks } from '../checks/structure.js';
 import userCanPublishPage from '../../../tools/utils/publish.js';
+import getServiceConfig from '../../../utils/service-config.js';
 
+// Add these constants
+const SPIDY_URL_FALLBACK = 'https://spidy.gwp.corp.adobe.com';
 const DEF_NOT_FOUND = 'Not found';
 const DEF_NEVER = 'Never';
 const NOT_FOUND = {
@@ -12,6 +15,222 @@ const NOT_FOUND = {
 const DA_DOMAIN = 'da.live';
 const nonEDSContent = 'Non AEM EDS Content';
 const EXCLUDED_PATHS = ['/tools/caas'];
+
+const brokenLinksData = signal({ links: [], loading: false });
+
+// Add these helper functions before getStructureResults
+export function makeGroups(arr, n = 20) {
+  const batchSize = Math.ceil(arr.length / n);
+  const size = Math.ceil(arr.length / batchSize);
+  return Array.from({ length: batchSize }, (v, i) => arr.slice(i * size, i * size + size));
+}
+
+export async function spidyCheck(url) {
+  try {
+    const resp = await fetch(url, { method: 'HEAD' });
+    return !!resp.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function getSpidyResults(url, opts) {
+  try {
+    const resp = await fetch(`${url}/api/url-http-status`, opts);
+    if (!resp.ok) return [];
+    
+    const json = await resp.json();
+    if (!json.data || json.data.length === 0) return [];
+    
+    return json.data.reduce((acc, result) => {
+      const status = result.status === 'ECONNREFUSED' ? 503 : result.status;
+      if (status >= 399) {
+        result.status = status;
+        acc.push(result);
+      }
+      return acc;
+    }, []);
+  } catch (e) {
+    return [];
+  }
+}
+
+export function getLocaleFromUrl(url) {
+  // Extract locale from URL path like /en_us/, /jp/, /fr/, etc.
+  const pathMatch = url.pathname.match(/^\/([a-z]{2}(?:_[a-z]{2})?)\//i);
+  return pathMatch ? pathMatch[1] : 'en_us';
+}
+
+export function getTagType(element) {
+  const tagName = element.tagName.toLowerCase();
+  if (tagName === 'a') return 'Anchor';
+  if (tagName === 'img') return 'Image';
+  if (tagName === 'iframe') return 'iFrame';
+  return tagName;
+}
+
+export function getPosition(element) {
+  if (element.closest('nav') || element.closest('header')) return 'NAV';
+  if (element.closest('footer')) return 'FOOTER';
+  return 'CONTENT';
+}
+
+export function getLinkTextOrAlt(element) {
+  if (element.tagName === 'IMG') {
+    return element.alt || element.title || '';
+  }
+  if (element.tagName === 'A') {
+    // Check if anchor contains an image
+    const img = element.querySelector('img');
+    if (img) return img.alt || img.title || element.textContent.trim();
+    return element.textContent.trim() || element.title || '';
+  }
+  return element.textContent?.trim() || '';
+}
+
+export function isElementVisible(element) {
+  if (!element) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== 'none' 
+    && style.visibility !== 'hidden' 
+    && style.opacity !== '0'
+    && element.offsetWidth > 0 
+    && element.offsetHeight > 0;
+}
+
+export async function checkLinksForBrokenStatus(links, envName = null) {
+  const { spidy } = await getServiceConfig(window.location.origin, envName);
+  const spidyUrl = spidy?.url || SPIDY_URL_FALLBACK;
+  const canSpidy = await spidyCheck(spidyUrl);
+  
+  if (!canSpidy) {
+    console.warn('Cannot connect to link checking service');
+    return [];
+  }
+
+  const groups = makeGroups(links);
+  const baseOpts = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+  const badResults = [];
+
+  for (const group of groups) {
+    const urls = group.map((link) => {
+      let checkUrl = link.href;
+      if (checkUrl.includes('hlx.page')) checkUrl = checkUrl.replace('hlx.page', 'hlx.live');
+      if (checkUrl.includes('aem.page')) checkUrl = checkUrl.replace('aem.page', 'aem.live');
+      return checkUrl;
+    });
+    
+    const opts = { ...baseOpts, body: JSON.stringify({ urls }) };
+    const spidyResults = await getSpidyResults(spidyUrl, opts);
+    badResults.push(...spidyResults);
+  }
+
+  return badResults;
+}
+
+export function collectAllPageLinks() {
+  const allLinks = [];
+  const selectors = [
+    'a[href]',
+    'img[src$=".svg"]',
+    'iframe'
+  ];
+  
+  selectors.forEach(selector => {
+    const elements = [...document.querySelectorAll(selector)];
+    elements.forEach(el => {
+      if (el.closest('.preflight')) return; // Skip preflight UI
+      
+      let url;
+      try {
+        if (el.tagName === 'A') {
+          url = el.href;
+        } else if (el.tagName === 'IMG') {
+          url = el.src;
+        } else if (el.tagName === 'IFRAME') {
+          url = el.src;
+        }
+        
+        if (url && !url.includes('tel:') && !url.includes('mailto:') && !url.startsWith('#')) {
+          allLinks.push({
+            element: el,
+            href: url,
+            tagName: el.tagName
+          });
+        }
+      } catch (e) {
+        // Skip invalid URLs
+      }
+    });
+  });
+  
+  return allLinks;
+}
+
+export async function collectBrokenLinksData() {
+  brokenLinksData.value = { ...brokenLinksData.value, loading: true };
+  
+  const brokenLinksArray = await getBrokenLinksDetails();
+  
+  brokenLinksData.value = { links: brokenLinksArray, loading: false };
+  
+  // Expose to window for external access (Milo Studio)
+  if (!window.contentInsights) {
+    window.contentInsights = {};
+  }
+  window.contentInsights.general = {
+    brokenLinks: brokenLinksArray,
+    fragments: content.value.fragments?.items || [],
+    links: content.value.links?.items || [],
+    svgs: content.value.svgs?.items || [],
+    pdfs: content.value.pdfs?.items || [],
+    nav: content.value.nav?.items || [],
+    page: content.value.page?.items || []
+  };
+}
+// Export function for external use (Milo Studio)
+export async function getBrokenLinksDetails() {
+  const currentUrl = new URL(window.location.href);
+  const sourceUrl = `${currentUrl.origin}${currentUrl.pathname}`;
+  const locale = getLocaleFromUrl(currentUrl);
+  
+  // Collect all links on the page
+  const allPageLinks = collectAllPageLinks();
+  
+  // Check which links are broken
+  const brokenResults = await checkLinksForBrokenStatus(allPageLinks);
+  
+  // Build detailed broken links data
+  const brokenLinksArray = [];
+  
+  brokenResults.forEach(result => {
+    const matchingLink = allPageLinks.find(link => {
+      let checkUrl = link.href;
+      if (checkUrl.includes('hlx.page')) checkUrl = checkUrl.replace('hlx.page', 'hlx.live');
+      if (checkUrl.includes('aem.page')) checkUrl = checkUrl.replace('aem.page', 'aem.live');
+      return checkUrl === result.url;
+    });
+    
+    if (matchingLink) {
+      const linkData = {
+        sourceUrl,
+        locale,
+        brokenLinks: result.url,
+        tagType: getTagType(matchingLink.element),
+        position: getPosition(matchingLink.element),
+        linkText: getLinkTextOrAlt(matchingLink.element),
+        visibility: isElementVisible(matchingLink.element) ? 'TRUE' : 'FALSE',
+        responseCode: result.status,
+        redirectedUrl: result.redirectUrl || '',
+        redirectedStatus: result.redirectStatus || 'NA'
+      };
+      
+      brokenLinksArray.push(linkData);
+    }
+  });
+  
+  return brokenLinksArray;
+}
 
 const content = signal({});
 
@@ -134,6 +353,7 @@ export function runGeneralChecks() {
     svgs: { items: findLinks('img[src$=".svg"') },
     pdfs: { items: findLinks('main iframe') },
     nav: { items: findLinks('header a[href^="/"'), closed: true },
+    brokenLinks: { items: [], loading: false } // Add this
   };
 
   return contentValue;
@@ -145,6 +365,8 @@ async function setContent() {
   content.value = runGeneralChecks();
 
   getStatuses();
+   // Check for broken links after content is loaded
+   collectBrokenLinksData();
   const sk = document.querySelector('aem-sidekick, helix-sidekick');
   sk?.addEventListener('statusfetched', async () => { // sidekick v6
     getStatuses();
