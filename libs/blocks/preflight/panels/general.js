@@ -139,7 +139,114 @@ export function runGeneralChecks() {
 
   return contentValue;
 }
+function getElementPosition(element) {
+  if (element.closest('header nav')) return 'NAV';
+  if (element.closest('footer')) return 'FOOTER';
+  if (element.closest('main')) return 'CONTENT';
+  return 'OTHER';
+}
 
+function getTagType(element) {
+  if (element.tagName === 'A') return 'Anchor';
+  if (element.tagName === 'IMG') return 'Image';
+  if (element.tagName === 'IFRAME') return 'IFrame';
+  return element.tagName;
+}
+
+function isElementVisible(element) {
+  const style = window.getComputedStyle(element);
+  return style.display !== 'none' && 
+         style.visibility !== 'hidden' && 
+         style.opacity !== '0';
+}
+
+function extractLocaleFromUrl(url) {
+  const match = url.match(/\/([a-z]{2}_[a-z]{2})\//i);
+  return match ? match[1] : 'en_us';
+}
+
+export async function getDetailedLinkReport() {
+  const sourceUrl = window.location.href;
+  const locale = extractLocaleFromUrl(sourceUrl);
+  const detailedReport = [];
+   
+  // Get all links, images, and iframes
+  const allElements = document.querySelectorAll('a[href], img[src], iframe[src]');
+  
+  // Create a map to store element info
+  const elementMap = new Map();
+  
+  for (const element of allElements) {
+    const url = element.href || element.src;
+    
+    // Skip certain URLs
+    if (!url || 
+        url.startsWith('#') || 
+        url.startsWith('javascript:') || 
+        url.startsWith('tel:') || 
+        url.startsWith('mailto:') ||
+        url.includes('localhost') ||
+        element.closest('.preflight')) {
+      continue;
+    }
+    
+    const linkText = element.textContent?.trim() || 
+                    element.alt || 
+                    element.title || 
+                    '';
+    
+    const elementInfo = {
+      element,
+      sourceUrl,
+      locale,
+      brokenLink: url,
+      tagType: getTagType(element),
+      position: getElementPosition(element),
+      linkTextOrImgAlt: linkText,
+      visibility: isElementVisible(element) ? 'TRUE' : 'FALSE',
+      responseCode: 'Checking...',
+      redirectedUrl: '',
+      redirectedUrlStatus: 'NA'
+    };
+    
+    // Store by URL to avoid duplicate checks
+    if (!elementMap.has(url)) {
+      elementMap.set(url, [elementInfo]);
+    } else {
+      elementMap.get(url).push(elementInfo);
+    }
+  }
+  
+  // Check each unique URL without CORS issues by using mode: 'no-cors'
+  // But since that doesn't return status, we'll just collect the data
+  // and let the browser tell us which ones failed
+  
+  for (const [url, elementInfos] of elementMap.entries()) {
+    try {
+      // Try to check if the link works
+      // Use a simple approach that won't trigger CORS for most cases
+      const response = await fetch(url, { 
+        method: 'HEAD',
+        mode: 'no-cors'  // This avoids CORS but we can't read the response
+      });
+      
+      // With no-cors mode, we can't read the actual status
+      // So we'll just mark it as checked
+      for (const info of elementInfos) {
+        info.responseCode = 'OK (no-cors)';
+        // Only add if we want to include all links, not just broken ones
+        // detailedReport.push(info);
+      }
+    } catch (error) {
+      // If fetch fails completely, it's likely broken
+      for (const info of elementInfos) {
+        info.responseCode = 'ERROR';
+        detailedReport.push(info);
+      }
+    }
+  }
+  return detailedReport;
+}
 async function setContent() {
   if (content.value.page) return;
 

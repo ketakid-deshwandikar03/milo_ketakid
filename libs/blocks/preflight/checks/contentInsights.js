@@ -1,4 +1,4 @@
-import { runGeneralChecks } from '../panels/general.js';
+import { runGeneralChecks,getDetailedLinkReport } from '../panels/general.js';
 import { checkImageDimensions } from './assets.js';
 import { checkAlt } from '../accessibility/audit-image-alt-text.js';
 import {
@@ -19,6 +19,7 @@ import {
   checkBody,
   checkLorem,
   validLinkFilter,
+  checkLinks
 } from './seo.js';
 
 // eslint-disable-next-line import/prefer-default-export
@@ -45,7 +46,7 @@ export async function openAllModals(area = document) {
 }
 
 window.preflightExecutors = {
-  general: { runGeneralChecks },
+  general: { runGeneralChecks,getDetailedLinkReport },
   assets: {
     openAllModals,
     checkImageDimensions,
@@ -69,6 +70,7 @@ window.preflightExecutors = {
     checkBody,
     checkLorem,
     validLinkFilter,
+    checkLinks
   },
 };
 
